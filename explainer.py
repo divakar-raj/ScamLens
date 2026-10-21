@@ -4,6 +4,9 @@ Two modes:
   1. AI mode  - if GROQ_API_KEY is set in .env and the call works.
   2. Fallback - a simple template (no key, no internet, or API error).
 The demo NEVER breaks because of the AI.
+
+Model: tries LLM_MODEL from .env first (if you set it), then the list below
+in order. Groq retires models often, so we try several instead of one.
 """
 import os
 
@@ -34,7 +37,7 @@ def _fallback(result: dict) -> str:
 
 def explain(text: str, result: dict) -> tuple[str, str]:
     """Return (explanation, source) where source is 'AI' or 'template'."""
-    key = os.environ.get("API_KEY")
+    key = os.environ.get("GROQ_API_KEY")
     if not key or not result["findings"]:
         return _fallback(result), "template"
 
