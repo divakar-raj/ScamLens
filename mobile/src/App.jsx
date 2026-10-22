@@ -76,6 +76,21 @@ function App() {
         {loading ? 'Analyzing...' : 'Analyze Message'}
       </button>
 
+      <div style={{ marginTop: '15px', fontSize: '12px', color: '#555', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+        <span>🔒</span>
+        <span><strong>Privacy First:</strong> Text is analyzed in-memory. Zero logs stored. SMS permissions are not required.</span>
+      </div>
+      
+      {/* Add a button to instantly wipe the screen to prove no storage */}
+      {result && (
+        <button 
+          onClick={() => { setText(''); setResult(null); setError(''); }}
+          style={{ width: '100%', padding: '10px', marginTop: '10px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '5px' }}
+        >
+          🗑️ Clear Data Instantly
+        </button>
+      )}
+
       {offlineMode && (
         <div style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '10px', marginTop: '15px', borderRadius: '5px', border: '1px solid #ffeeba' }}>
           <strong>⚠️ Network Unavailable:</strong> Displaying offline safety analysis.

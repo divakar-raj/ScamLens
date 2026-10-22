@@ -1,5 +1,10 @@
-id,message
-1,"Your bank account will be blocked within 24 hours. Share the OTP immediately."
-2,"Hey are we still on for lunch tomorrow?"
-3,"You have won a prize! Click here https://bit.ly/abc and pay a processing fee."
-4,"Your order has shipped and will arrive on Friday."
+text,category,expected_risk
+"Dear customer, your electricity power will be disconnected tonight at 9:30 PM from update office. Call 9876543210 immediately.","Utility Scam","High"
+"TRAI ALERT: Your mobile number will be blocked within 24 hrs due to illegal activity. Click here to complete KYC: http://trai-kyc-update.com","Authority Impersonation","High"
+"ஐயா, உங்கள் வங்கி கணக்கு முடக்கப்பட்டுள்ளது. மீண்டும் தொடங்க உங்கள் பான் கார்டு எண்ணை அனுப்பவும்.","Tamil Bank Scam","High"
+"Bhaiya, aapka 50,000 ka lottery laga hai. Tax pay karne ke liye Google Pay par 2000 bhejein.","Hinglish Advance Fee","High"
+"Congratulations! You have been selected for a 5 lakh cash prize. Click here to claim.","Lottery Link Scam","High"
+"Please call 9876543210 to schedule your delivery.","Isolated Contact Rule","Medium"
+"Your Amazon package OTP is 4920. DO NOT SHARE THIS WITH ANYONE. Amazon will never call you to ask for this code.","Genuine OTP","Low"
+"Reminder: Your Jio mobile plan expires in 3 days. Recharge now via the MyJio app.","Genuine Recharge","Low"
+"Hey team, don't forget to push the hackathon code before the deadline tonight.","Normal Conversation","Low"

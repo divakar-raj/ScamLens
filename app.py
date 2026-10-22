@@ -8,7 +8,7 @@ from batch import analyze_dataframe
 from log_detector import analyze_logs
 from generate_logs import generate
 from i18n import NEXT_STEPS, TITLES, UI_LANGS, text_lang
-from test_cases import SAMPLES
+from test_cases import TEST_MESSAGES
 
 st.set_page_config(page_title="ScamLens", page_icon="🛡️", layout="wide")
 st.title("🛡️ ScamLens")
@@ -37,8 +37,8 @@ def highlight(text: str, findings: list) -> str:
 tab_msg, tab_batch, tab_logs = st.tabs(["Message check", "Batch (CSV)", "Log analysis"])
 
 with tab_msg:
-    sample_name = st.selectbox("Try a sample message (optional)", ["-- none --"] + [s["name"] for s in SAMPLES])
-    default_text = next((s["text"] for s in SAMPLES if s["name"] == sample_name), "")
+    sample_name = st.selectbox("Try a sample message (optional)", ["-- none --"] + [s["category"] for s in TEST_MESSAGES])
+    default_text = next((s["text"] for s in TEST_MESSAGES if s["category"] == sample_name), "")
     message = st.text_area("Paste a message here", value=default_text, height=160)
 
     if st.button("Analyze", type="primary"):
@@ -90,8 +90,16 @@ with tab_batch:
             c1.metric("Rows", len(out))
             c2.metric("High risk", int((out["risk_level"] == "High").sum()))
             c3.metric("Average score", round(out["risk_score"].mean()))
-            st.bar_chart(out["risk_level"].value_counts())
-            st.dataframe(out, use_container_width=True)
+            
+            # Added red color to the bar chart for presentation impact
+            st.bar_chart(out["risk_level"].value_counts(), color="#ff4b4b")
+            
+            # Highlight High Risk rows in light red
+            def highlight_high_risk(val):
+                return 'background-color: #ffcccc; color: #900000' if val == 'High' else ''
+                
+            st.dataframe(out.style.map(highlight_high_risk, subset=['risk_level']), use_container_width=True)
+            
             st.download_button("Download results", out.to_csv(index=False), "results.csv", "text/csv")
 
 with tab_logs:
