@@ -1,341 +1,473 @@
-import React, { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+const API_URL = 'http://127.0.0.1:8000/analyze';
+const HISTORY_STORAGE_KEY = 'scamlens-scan-history';
+const MAX_MESSAGE_LENGTH = 5000;
+
+const CONNECTION_FALLBACK = {
+  score: 90,
+  level: 'High',
+  language: 'Unknown',
+  threat_type: 'Connection Error',
+  explanation: 'Could not reach the AI server. Treat this message as highly suspicious.',
+  safe_step: 'Do not click any links or share personal information.'
+};
+
+const EMPTY_HISTORY = [];
+
+function isValidAnalysis(data) {
+  return (
+    data !== null &&
+    typeof data === 'object' &&
+    Number.isInteger(data.score) &&
+    data.score >= 0 &&
+    data.score <= 100 &&
+    ['High', 'Medium', 'Low', 'Safe'].includes(data.level) &&
+    typeof data.language === 'string' &&
+    typeof data.threat_type === 'string' &&
+    typeof data.explanation === 'string' &&
+    typeof data.safe_step === 'string'
+  );
+}
+
+function getRiskStyles(level) {
+  if (level === 'High') {
+    return {
+      card: 'border-red-500/30 bg-red-950/30',
+      badge: 'border-red-400/30 bg-red-500/15 text-red-300',
+      meter: 'bg-red-400',
+      icon: '⚠️',
+      label: 'High risk'
+    };
+  }
+
+  if (level === 'Medium') {
+    return {
+      card: 'border-amber-500/30 bg-amber-950/20',
+      badge: 'border-amber-400/30 bg-amber-500/15 text-amber-300',
+      meter: 'bg-amber-400',
+      icon: '⚠️',
+      label: 'Medium risk'
+    };
+  }
+
+  if (level === 'Low') {
+    return {
+      card: 'border-lime-500/30 bg-lime-950/20',
+      badge: 'border-lime-400/30 bg-lime-500/15 text-lime-300',
+      meter: 'bg-lime-400',
+      icon: '💡',
+      label: 'Low risk'
+    };
+  }
+
+  return {
+    card: 'border-emerald-500/30 bg-emerald-950/20',
+    badge: 'border-emerald-400/30 bg-emerald-500/15 text-emerald-300',
+    meter: 'bg-emerald-400',
+    icon: '🛡️',
+    label: 'Safe'
+  };
+}
+
+function loadHistory() {
+  try {
+    const savedHistory = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!savedHistory) return EMPTY_HISTORY;
+
+    const parsedHistory = JSON.parse(savedHistory);
+    if (!Array.isArray(parsedHistory)) return EMPTY_HISTORY;
+
+    return parsedHistory.filter(
+      (item) =>
+        item &&
+        typeof item.id === 'string' &&
+        typeof item.title === 'string' &&
+        typeof item.text === 'string' &&
+        typeof item.level === 'string' &&
+        Number.isInteger(item.score)
+    );
+  } catch {
+    return EMPTY_HISTORY;
+  }
+}
 
 export default function App() {
-  // State variables
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'history' | 'settings'
-  const [selectedLang, setSelectedLang] = useState('English');
+  const [activeTab, setActiveTab] = useState('scan');
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
-  
-  // History state
-  const [scanHistory, setScanHistory] = useState([
-    { id: 1, title: 'Bank KYC Message', risk: 'High', date: '2 min ago', text: 'Your bank account will be blocked today. Update KYC: https://bank-update.com' },
-    { id: 2, title: 'Delivery Notification', risk: 'Medium', date: '12 min ago', text: 'Package failed to deliver. Update address at bad-link.info' },
-    { id: 3, title: 'Gmail Security Alert', risk: 'Safe', date: '1 hr ago', text: 'Your monthly bank statement is available in official app.' }
-  ]);
+  const [scanHistory, setScanHistory] = useState(loadHistory);
 
-  // Handle Backend API Call
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(scanHistory));
+    } catch {
+      // Scanning remains available when browser storage is disabled or full.
+    }
+  }, [scanHistory]);
+
+  const saveToHistory = (text, result) => {
+    const entry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title: text.slice(0, 20),
+      text,
+      level: result.level,
+      score: result.score,
+      date: new Date().toISOString()
+    };
+
+    setScanHistory((history) => [entry, ...history].slice(0, 50));
+  };
+
   const handleAnalyze = async () => {
-    if (!inputText.trim()) return;
+    const text = inputText.trim();
+    if (!text || loading) return;
 
     setLoading(true);
     setAnalysisResult(null);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
 
     try {
-      // Connect to your FastAPI backend running locally
-      const response = await fetch('http://127.0.0.1:8000/analyze', {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: inputText,
-          language: selectedLang
-        })
+        body: JSON.stringify({ text }),
+        signal: controller.signal
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setAnalysisResult(data);
-        
-        // Add to history
-        setScanHistory([
-          {
-            id: Date.now(),
-            title: inputText.slice(0, 20) + '...',
-            risk: data.risk_level || 'High',
-            date: 'Just now',
-            text: inputText
-          },
-          ...scanHistory
-        ]);
-      } else {
-        throw new Error('API request failed');
+      if (!response.ok) {
+        throw new Error(`Analysis request failed with status ${response.status}.`);
       }
-    } catch (err) {
-      // Fallback Mock Data if FastAPI is not yet running
-      setTimeout(() => {
-        const isTanglish = selectedLang === 'Tanglish' || selectedLang === 'Tamil';
-        const mockResponse = {
-          risk_level: 'High',
-          message: inputText,
-          reasons: isTanglish
-            ? [
-                'அவசரப்படுத்தும் மொழி (Creates urgency)',
-                'KYC புதுப்பிக்கச் சொல்கிறது (Requests KYC)',
-                'சந்தேகமான இணைப்பு (Suspicious link: bank-update.com)'
-              ]
-            : [
-                'Creates extreme urgency ("blocked today")',
-                'Requests immediate KYC verification',
-                'Contains suspicious unverified domain link'
-              ],
-          recommended_action: isTanglish
-            ? 'இணைப்பைக் கிளிக் செய்ய வேண்டாம். உங்கள் வங்கியின் அதிகாரப்பூர்வ செயலி மூலம் சரிபார்க்கவும்.'
-            : 'Do not click the link. Verify your account only through your bank\'s official app or website.'
-        };
-        setAnalysisResult(mockResponse);
-        setScanHistory([
-          {
-            id: Date.now(),
-            title: inputText.slice(0, 22) + '...',
-            risk: 'High',
-            date: 'Just now',
-            text: inputText
-          },
-          ...scanHistory
-        ]);
-      }, 1200);
+
+      const data = await response.json();
+      if (!isValidAnalysis(data)) {
+        throw new Error('The analysis server returned an invalid response.');
+      }
+
+      setAnalysisResult(data);
+      saveToHistory(text, data);
+    } catch {
+      setAnalysisResult(CONNECTION_FALLBACK);
+      saveToHistory(text, CONNECTION_FALLBACK);
     } finally {
+      window.clearTimeout(timeoutId);
       setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex justify-center items-center p-0 sm:p-4 font-sans">
-      {/* Mobile Shell Frame */}
-      <div className="w-full max-w-md bg-slate-800 sm:rounded-3xl shadow-2xl overflow-hidden border border-slate-700 flex flex-col h-[100vh] sm:h-[840px] relative">
-        
-        {/* Top Header */}
-        <header className="bg-slate-800/90 backdrop-blur border-b border-slate-700/80 px-5 py-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-bold text-white text-lg shadow-lg shadow-blue-500/30">
-              S
+  const clearScanner = () => {
+    setInputText('');
+    setAnalysisResult(null);
+  };
+
+  const scanAnother = () => {
+    clearScanner();
+    setActiveTab('scan');
+  };
+
+  const renderScan = () => {
+    const riskStyles = analysisResult ? getRiskStyles(analysisResult.level) : null;
+
+    return (
+      <div className="space-y-5">
+        <section className="rounded-3xl border border-slate-700/80 bg-gradient-to-br from-slate-800 via-slate-800 to-slate-800/70 p-5 shadow-xl shadow-black/20">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">
+                Scam protection
+              </p>
+              <h2 className="text-2xl font-bold tracking-tight text-white">
+                Check before you click.
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                Paste a suspicious SMS, WhatsApp message, or link for a quick risk check.
+              </p>
             </div>
-            <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-              ScamLens
-            </span>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-500/15 text-2xl ring-1 ring-blue-400/20">
+              🛡️
+            </div>
           </div>
 
-          {/* Language Selector Dropdown */}
-          <select 
-            value={selectedLang}
-            onChange={(e) => setSelectedLang(e.target.value)}
-            className="bg-slate-700 text-xs text-slate-200 border border-slate-600 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <label htmlFor="message-input" className="mb-2 block text-sm font-medium text-slate-200">
+            Message to analyze
+          </label>
+          <textarea
+            id="message-input"
+            rows={6}
+            maxLength={MAX_MESSAGE_LENGTH}
+            value={inputText}
+            onChange={(event) => setInputText(event.target.value)}
+            placeholder="Paste the full message or link here..."
+            disabled={loading}
+            className="min-h-40 w-full resize-y rounded-2xl border border-slate-600/80 bg-slate-950/70 p-4 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 disabled:opacity-60"
+          />
+
+          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+            <span>Only the text you submit is analyzed.</span>
+            <span>{inputText.length}/{MAX_MESSAGE_LENGTH}</span>
+          </div>
+
+          <div className="mt-4 flex gap-3">
+            <button
+              type="button"
+              onClick={clearScanner}
+              disabled={loading || !inputText}
+              className="rounded-xl border border-slate-600 px-4 py-3 text-sm font-semibold text-slate-300 transition hover:bg-slate-700/70 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={handleAnalyze}
+              disabled={loading || !inputText.trim()}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-950/40 transition hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-4 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-400 disabled:shadow-none"
+            >
+              {loading ? (
+                <>
+                  <span
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                    aria-hidden="true"
+                  />
+                  <span>Analyzing...</span>
+                </>
+              ) : (
+                <>
+                  <span aria-hidden="true">🔍</span>
+                  <span>Analyze Threat</span>
+                </>
+              )}
+            </button>
+          </div>
+        </section>
+
+        {loading && (
+          <div
+            className="rounded-2xl border border-blue-500/20 bg-blue-900/10 p-4 text-center text-sm text-blue-200"
+            role="status"
+            aria-live="polite"
           >
-            <option value="English">English</option>
-            <option value="Tamil">Tamil (தமிழ்)</option>
-            <option value="Tanglish">Tanglish</option>
-            <option value="Hindi">Hindi (हिन्दी)</option>
-            <option value="Hinglish">Hinglish</option>
-          </select>
+            Checking for suspicious patterns...
+          </div>
+        )}
+
+        {analysisResult && !loading && (
+          <section
+            className={`space-y-5 rounded-3xl border p-5 shadow-xl shadow-black/20 ${riskStyles.card}`}
+            aria-live="polite"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-bold ${riskStyles.badge}`}>
+                <span aria-hidden="true">{riskStyles.icon}</span>
+                <span>{riskStyles.label}</span>
+              </div>
+              <span className="rounded-full border border-slate-500/40 bg-slate-900/50 px-3 py-1.5 text-xs font-medium text-slate-300">
+                {analysisResult.threat_type}
+              </span>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-300">Threat score</span>
+                <span className="text-sm font-bold tabular-nums text-white">
+                  {analysisResult.score}
+                  <span className="font-medium text-slate-400"> / 100</span>
+                </span>
+              </div>
+              <div
+                className="h-2.5 overflow-hidden rounded-full bg-slate-950/70 ring-1 ring-white/5"
+                role="progressbar"
+                aria-label="Threat score"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={analysisResult.score}
+              >
+                <div
+                  className={`h-full rounded-full transition-[width] duration-700 ease-out ${riskStyles.meter}`}
+                  style={{ width: `${analysisResult.score}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-700/70 bg-slate-800/50 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-bold text-slate-100">Analysis Explanation</h3>
+                <span className="shrink-0 rounded-full bg-slate-700/80 px-2.5 py-1 text-[11px] font-medium text-slate-300">
+                  {analysisResult.language}
+                </span>
+              </div>
+              <p className="text-sm leading-6 text-slate-300">{analysisResult.explanation}</p>
+            </div>
+
+            <div className="rounded-2xl border border-blue-500/30 bg-blue-900/20 p-4">
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-blue-200">
+                <span aria-hidden="true">💡</span>
+                Recommended Action
+              </h3>
+              <p className="text-sm leading-6 text-slate-200">{analysisResult.safe_step}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={scanAnother}
+              className="w-full rounded-xl border border-slate-600 bg-slate-800/80 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:border-blue-400/50 hover:bg-slate-700"
+            >
+              Scan Another Message
+            </button>
+          </section>
+        )}
+      </div>
+    );
+  };
+
+  const renderHistory = () => (
+    <section className="space-y-4">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">Your activity</p>
+        <h2 className="mt-2 text-2xl font-bold text-white">Scan history</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          {scanHistory.length} {scanHistory.length === 1 ? 'scan' : 'scans'} saved on this device.
+        </p>
+      </div>
+
+      {scanHistory.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-800/50 px-5 py-10 text-center">
+          <span className="text-3xl" aria-hidden="true">🔍</span>
+          <p className="mt-3 text-sm font-semibold text-slate-200">No scans yet</p>
+          <p className="mt-1 text-xs leading-5 text-slate-400">
+            Your completed scans will appear here.
+          </p>
+          <button
+            type="button"
+            onClick={() => setActiveTab('scan')}
+            className="mt-5 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500"
+          >
+            Start a scan
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {scanHistory.map((item) => {
+            const styles = getRiskStyles(item.level);
+            return (
+              <article key={item.id} className="rounded-2xl border border-slate-700 bg-slate-800/80 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="break-words text-sm font-semibold text-slate-100">{item.title}</h3>
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">{item.text}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${styles.badge}`}>
+                    {item.level}
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-slate-700/80 pt-3 text-xs text-slate-500">
+                  <time dateTime={item.date}>{new Date(item.date).toLocaleString()}</time>
+                  <span className="font-semibold tabular-nums text-slate-300">{item.score}/100</span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+
+  const renderSettings = () => (
+    <section className="space-y-4">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">ScamLens</p>
+        <h2 className="mt-2 text-2xl font-bold text-white">Privacy & settings</h2>
+      </div>
+
+      <div className="divide-y divide-slate-700 rounded-2xl border border-slate-700 bg-slate-800/80 px-4">
+        <div className="flex items-center justify-between gap-4 py-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-100">On-device history</p>
+            <p className="mt-1 text-xs text-slate-400">Saved locally in this browser.</p>
+          </div>
+          <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300">
+            Active
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-4 py-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-100">Analysis service</p>
+            <p className="mt-1 text-xs text-slate-400">Local FastAPI backend</p>
+          </div>
+          <span className="text-xs font-medium text-blue-300">127.0.0.1:8000</span>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-blue-500/20 bg-blue-900/10 p-4 text-sm leading-6 text-slate-300">
+        <p className="font-semibold text-blue-200">🛡️ Privacy first</p>
+        <p className="mt-2 text-xs leading-5 text-slate-400">
+          ScamLens only analyzes text you choose to submit. Your scan history stays in this browser.
+        </p>
+      </div>
+
+      {scanHistory.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setScanHistory([])}
+          className="w-full rounded-xl border border-red-500/30 px-4 py-3 text-sm font-semibold text-red-300 transition hover:bg-red-500/10"
+        >
+          Clear scan history
+        </button>
+      )}
+    </section>
+  );
+
+  const tabs = [
+    { id: 'scan', label: 'Scan', icon: '🔍' },
+    { id: 'history', label: 'History', icon: '📜' },
+    { id: 'settings', label: 'Settings', icon: '⚙️' }
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 sm:flex sm:justify-center sm:px-4 sm:py-8">
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col border-x border-slate-800 bg-slate-900 sm:min-h-[calc(100vh-4rem)] sm:overflow-hidden sm:rounded-3xl sm:border sm:shadow-2xl sm:shadow-black/40">
+        <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/90 px-5 py-4 backdrop-blur-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-xl shadow-lg shadow-blue-950/50">
+                🛡️
+              </div>
+              <div>
+                <h1 className="text-lg font-bold tracking-tight text-white">ScamLens</h1>
+                <p className="text-[11px] text-slate-400">Understand before you act</p>
+              </div>
+            </div>
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+              Private scan
+            </span>
+          </div>
         </header>
 
-        {/* Scrollable Main Content Area */}
-        <main className="flex-1 overflow-y-auto p-5 space-y-5">
-          
-          {/* TAB 1: HOME (SCANNER) */}
-          {activeTab === 'home' && (
-            <>
-              {/* Input Card */}
-              <div className="bg-slate-800 border border-slate-700/80 rounded-2xl p-4 shadow-sm">
-                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  Paste Suspicious Message / Link
-                </label>
-                <textarea
-                  rows={4}
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder="Paste SMS, WhatsApp message, or URL here... (e.g., 'Your bank account will be blocked today. Update KYC at http://kyc-update.in')"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition resize-none"
-                />
-                
-                <div className="mt-3 flex items-center justify-between">
-                  <button 
-                    onClick={() => setInputText("Ungal bank account block aagum. Indha link-la KYC update pannunga: https://kyc-update.in")}
-                    className="text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2"
-                  >
-                    + Load Sample Scam
-                  </button>
-                  <button
-                    onClick={handleAnalyze}
-                    disabled={loading || !inputText.trim()}
-                    className={`px-5 py-2.5 rounded-xl font-medium text-sm text-white shadow-lg flex items-center space-x-2 transition ${
-                      loading || !inputText.trim()
-                        ? 'bg-slate-700 opacity-50 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-blue-600/30 active:scale-95'
-                    }`}
-                  >
-                    {loading ? (
-                      <>
-                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                        <span>Analyzing...</span>
-                      </>
-                    ) : (
-                      <span>Analyze Threat</span>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Analysis Loading State */}
-              {loading && (
-                <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-6 text-center space-y-3">
-                  <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                  <p className="text-sm font-medium text-slate-300">Scanning for threat patterns...</p>
-                  <div className="flex justify-center space-x-2 text-xs text-slate-500">
-                    <span>Regex Rules</span> • <span>Language NLP</span> • <span>AI Explainer</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Result View Card */}
-              {analysisResult && !loading && (
-                <div className={`border rounded-2xl p-5 space-y-4 shadow-xl transition-all ${
-                  analysisResult.risk_level === 'High'
-                    ? 'bg-red-950/30 border-red-800/80'
-                    : analysisResult.risk_level === 'Medium'
-                    ? 'bg-amber-950/30 border-amber-800/80'
-                    : 'bg-emerald-950/30 border-emerald-800/80'
-                }`}>
-                  {/* Risk Badge Header */}
-                  <div className="flex items-center justify-between">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                      analysisResult.risk_level === 'High'
-                        ? 'bg-red-500/20 text-red-400 border border-red-500/40'
-                        : analysisResult.risk_level === 'Medium'
-                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                        : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                    }`}>
-                      {analysisResult.risk_level} Risk Detected
-                    </span>
-                    <span className="text-xs text-slate-400">{selectedLang} Output</span>
-                  </div>
-
-                  {/* Highlighted Message */}
-                  <div className="bg-slate-900/80 rounded-xl p-3 border border-slate-800 text-xs text-slate-300 italic">
-                    "{analysisResult.message}"
-                  </div>
-
-                  {/* Why this is suspicious */}
-                  <div>
-                    <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                      Why this is suspicious:
-                    </h4>
-                    <ul className="space-y-1.5">
-                      {analysisResult.reasons.map((reason, idx) => (
-                        <li key={idx} className="flex items-start text-xs text-slate-200 space-x-2">
-                          <span className="text-red-400 font-bold">•</span>
-                          <span>{reason}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Recommended Action */}
-                  <div className="bg-slate-900/90 rounded-xl p-3 border border-slate-700/60">
-                    <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-1">
-                      Recommended Action:
-                    </h4>
-                    <p className="text-xs text-slate-200 leading-relaxed">
-                      {analysisResult.recommended_action}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Quick Scan History Preview */}
-              <div className="space-y-3 pt-2">
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  Recent Scans
-                </h3>
-                <div className="space-y-2">
-                  {scanHistory.slice(0, 3).map((item) => (
-                    <div key={item.id} className="bg-slate-800 border border-slate-700/60 rounded-xl p-3 flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <p className="text-xs font-medium text-slate-200">{item.title}</p>
-                        <p className="text-[10px] text-slate-500">{item.date}</p>
-                      </div>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                        item.risk === 'High' ? 'bg-red-500/20 text-red-400' :
-                        item.risk === 'Medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'
-                      }`}>
-                        {item.risk}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* TAB 2: HISTORY */}
-          {activeTab === 'history' && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-200">All Scan History</h3>
-              {scanHistory.map((item) => (
-                <div key={item.id} className="bg-slate-800 border border-slate-700 rounded-xl p-3.5 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-semibold text-slate-200">{item.title}</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      item.risk === 'High' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'
-                    }`}>
-                      {item.risk}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400 line-clamp-2">{item.text}</p>
-                  <p className="text-[10px] text-slate-500">{item.date}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* TAB 3: SETTINGS */}
-          {activeTab === 'settings' && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-slate-200">Privacy & Rules</h3>
-              <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-3 text-xs text-slate-300">
-                <div className="flex items-center justify-between border-b border-slate-700 pb-2">
-                  <span>User-Initiated Mode</span>
-                  <span className="text-emerald-400 font-semibold">Active</span>
-                </div>
-                <div className="flex items-center justify-between border-b border-slate-700 pb-2">
-                  <span>Offline Regex Rules</span>
-                  <span className="text-emerald-400 font-semibold">Enabled</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>AI Model</span>
-                  <span className="text-blue-400 font-semibold">Groq / FastAPI</span>
-                </div>
-              </div>
-              
-              <div className="bg-blue-950/40 border border-blue-800/60 rounded-xl p-3 text-[11px] text-blue-300">
-                🛡️ <strong>Privacy First Architecture:</strong> ScamLens does not silently scrape messages. Only content explicitly pasted or shared is processed.
-              </div>
-            </div>
-          )}
+        <main className="flex-1 px-4 py-5 sm:overflow-y-auto sm:px-5">
+          {activeTab === 'scan' && renderScan()}
+          {activeTab === 'history' && renderHistory()}
+          {activeTab === 'settings' && renderSettings()}
         </main>
 
-        {/* Bottom Navigation Bar */}
-        <nav className="bg-slate-800 border-t border-slate-700 grid grid-cols-3 text-center py-2 text-xs">
-          <button
-            onClick={() => setActiveTab('home')}
-            className={`py-1.5 flex flex-col items-center space-y-1 ${
-              activeTab === 'home' ? 'text-blue-400 font-semibold' : 'text-slate-400'
-            }`}
-          >
-            <span>🔍</span>
-            <span>Scan</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`py-1.5 flex flex-col items-center space-y-1 ${
-              activeTab === 'history' ? 'text-blue-400 font-semibold' : 'text-slate-400'
-            }`}
-          >
-            <span>📜</span>
-            <span>History</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`py-1.5 flex flex-col items-center space-y-1 ${
-              activeTab === 'settings' ? 'text-blue-400 font-semibold' : 'text-slate-400'
-            }`}
-          >
-            <span>⚙️</span>
-            <span>Settings</span>
-          </button>
+        <nav className="sticky bottom-0 grid grid-cols-3 border-t border-slate-800 bg-slate-900/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              aria-current={activeTab === tab.id ? 'page' : undefined}
+              className={`flex flex-col items-center gap-1 rounded-xl py-2 text-xs font-medium transition ${
+                activeTab === tab.id
+                  ? 'bg-blue-500/10 text-blue-300'
+                  : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+              }`}
+            >
+              <span className="text-lg" aria-hidden="true">{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
         </nav>
-
       </div>
     </div>
   );
