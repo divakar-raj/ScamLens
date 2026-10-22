@@ -2,3 +2,11 @@
 __pycache__/
 .env
 *.pyc
+node_modules/
+dist/
+build/
+mobile/
+android/app/build/
+ios/
+.DS_Store
+npm-debug.log*

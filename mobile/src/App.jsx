@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-const API_URL = 'http://127.0.0.1:8000/analyze';
+const API_URL = 'https://vacate-bulge-cursor.ngrok-free.dev/analyze';
 const HISTORY_STORAGE_KEY = 'scamlens-scan-history';
 const LANGUAGE_STORAGE_KEY = 'scamlens-language';
 const SUPPORTED_LANGUAGES = ['English', 'Tamil', 'Hindi'];
