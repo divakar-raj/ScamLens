@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { AndroidSmsRetriever } from '@capgo/capacitor-android-sms-retriever';
+import { SendIntent } from 'send-intent';
 
 const API_URL = 'https://vacate-bulge-cursor.ngrok-free.dev/analyze';
 const HISTORY_STORAGE_KEY = 'scamlens-scan-history';
@@ -111,22 +113,6 @@ export default function App() {
   const [scanHistory, setScanHistory] = useState(loadHistory);
   const [language, setLanguage] = useState(loadLanguage);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(scanHistory));
-    } catch {
-      // Scanning remains available when browser storage is disabled or full.
-    }
-  }, [scanHistory]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
-    } catch {
-      // Language selection still works for the current session if storage is unavailable.
-    }
-  }, [language]);
-
   const saveToHistory = (text, result) => {
     const entry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -140,8 +126,8 @@ export default function App() {
     setScanHistory((history) => [entry, ...history].slice(0, 50));
   };
 
-  const handleAnalyze = async () => {
-    const text = inputText.trim();
+  const handleAnalyze = async (overrideText) => {
+    const text = (overrideText !== undefined ? overrideText : inputText).trim();
     if (!text || loading) return;
 
     setLoading(true);
@@ -176,6 +162,67 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const handleIncomingShare = async () => {
+      try {
+        const result = await SendIntent.checkSendIntentReceived();
+        if (result && result.extras) {
+          const sharedText = result.extras['android.intent.extra.TEXT'];
+          if (sharedText) {
+            setInputText(sharedText);
+            setActiveTab('scan');
+            handleAnalyze(sharedText); // <-- ADD THIS LINE HERE
+          }
+        }
+      } catch (error) {
+        console.log('No share intent received on startup:', error);
+      }
+    };
+
+    handleIncomingShare();
+  }, [language]);
+
+  useEffect(() => {
+    const setupSmsRetriever = async () => {
+      try {
+        await AndroidSmsRetriever.startWatch();
+
+        await AndroidSmsRetriever.addListener('smsReceived', (event) => {
+          if (event && event.message) {
+            console.log('Incoming SMS captured:', event.message);
+            setInputText(event.message);
+            setActiveTab('scan');
+            handleAnalyze(event.message); // <-- ADD THIS LINE HERE
+          }
+        });
+      } catch (error) {
+        console.log('SMS Retriever not available or failed to start:', error);
+      }
+    };
+
+    setupSmsRetriever();
+
+    return () => {
+      AndroidSmsRetriever.removeAllListeners();
+    };
+  }, [language]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(scanHistory));
+    } catch {
+      // Scanning remains available when browser storage is disabled or full.
+    }
+  }, [scanHistory]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    } catch {
+      // Language selection still works for the current session if storage is unavailable.
+    }
+  }, [language]);
 
   const clearScanner = () => {
     setInputText('');
@@ -240,7 +287,7 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={handleAnalyze}
+              onClick={() => handleAnalyze(inputText)} // <-- UPDATE THIS LINE
               disabled={loading || !inputText.trim()}
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-950/40 transition hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-4 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-400 disabled:shadow-none"
             >
