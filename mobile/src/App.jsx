@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 
 const API_URL = 'http://127.0.0.1:8000/analyze';
 const HISTORY_STORAGE_KEY = 'scamlens-scan-history';
+const LANGUAGE_STORAGE_KEY = 'scamlens-language';
+const SUPPORTED_LANGUAGES = ['English', 'Tamil', 'Hindi'];
 const MAX_MESSAGE_LENGTH = 5000;
 
 const CONNECTION_FALLBACK = {
@@ -14,6 +16,15 @@ const CONNECTION_FALLBACK = {
 };
 
 const EMPTY_HISTORY = [];
+
+function loadLanguage() {
+  try {
+    const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return SUPPORTED_LANGUAGES.includes(savedLanguage) ? savedLanguage : 'English';
+  } catch {
+    return 'English';
+  }
+}
 
 function isValidAnalysis(data) {
   return (
@@ -98,6 +109,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [scanHistory, setScanHistory] = useState(loadHistory);
+  const [language, setLanguage] = useState(loadLanguage);
 
   useEffect(() => {
     try {
@@ -106,6 +118,14 @@ export default function App() {
       // Scanning remains available when browser storage is disabled or full.
     }
   }, [scanHistory]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    } catch {
+      // Language selection still works for the current session if storage is unavailable.
+    }
+  }, [language]);
 
   const saveToHistory = (text, result) => {
     const entry = {
@@ -133,7 +153,7 @@ export default function App() {
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, language }),
         signal: controller.signal
       });
 
@@ -381,6 +401,26 @@ export default function App() {
       </div>
 
       <div className="divide-y divide-slate-700 rounded-2xl border border-slate-700 bg-slate-800/80 px-4">
+        <div className="flex flex-col gap-3 py-4">
+          <div>
+            <label htmlFor="preferred-language" className="text-sm font-semibold text-slate-100">
+              Analysis language
+            </label>
+            <p className="mt-1 text-xs text-slate-400">
+              Explanations and recommended actions will use this language.
+            </p>
+          </div>
+          <select
+            id="preferred-language"
+            value={language}
+            onChange={(event) => setLanguage(event.target.value)}
+            className="w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-3 text-sm text-slate-100 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10"
+          >
+            <option value="English">English</option>
+            <option value="Tamil">Tamil (தமிழ்)</option>
+            <option value="Hindi">Hindi (हिंदी)</option>
+          </select>
+        </div>
         <div className="flex items-center justify-between gap-4 py-4">
           <div>
             <p className="text-sm font-semibold text-slate-100">On-device history</p>
