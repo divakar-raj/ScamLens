@@ -1,8 +1,4 @@
-"""batch.py - PIVOT KIT: run the detector over a whole CSV.
-
-Useful for any problem statement involving many records (messages, reviews,
-complaints, logs). Change `analyze` or the column name and it still works.
-"""
+"""batch.py - run the message detector over a whole CSV (adds score, level, language, signs)."""
 import pandas as pd
 from detector import analyze
 
@@ -14,6 +10,7 @@ def analyze_dataframe(df: pd.DataFrame, text_column: str) -> pd.DataFrame:
         rows.append({
             "risk_score": res["score"],
             "risk_level": res["level"],
+            "language": res["language"],
             "signs": ", ".join(f["rule"] for f in res["findings"]),
         })
     return pd.concat([df.reset_index(drop=True), pd.DataFrame(rows)], axis=1)

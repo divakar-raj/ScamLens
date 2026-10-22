@@ -122,12 +122,11 @@ Golden rule: **pull before you start, push when you finish a piece.**
 
 ```powershell
 .venv\Scripts\activate
-git pull                          # 1. get the latest
-git checkout -b yourname-feature  # 2. your own branch (first time only)
-# ... edit your files ...
+git pull
+git checkout -b yourname-feature
 git add .
 git commit -m "short message about what you did"
-git push -u origin yourname-feature   # 3. send your branch to GitHub
+git push -u origin yourname-feature
 ```
 Then on GitHub click **Compare & pull request** > **Create pull request** > **Merge pull request**. Everyone else runs:
 ```powershell

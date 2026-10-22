@@ -71,9 +71,9 @@ Each rule looks like this:
 ```python
 {
     "name": "Request for sensitive data",
-    "patterns": [r"\botp\b", r"password", ...],   # regex patterns
-    "severity": 3,                                # 1 (weak) to 3 (strong)
-    "why": "Real banks never ask for OTPs...",    # shown to the user
+    "patterns": [r"\botp\b", r"password", ...],
+    "severity": 3,
+    "why": "Real banks never ask for OTPs...",
 }
 ```
 Current rules: urgency or threats, request for sensitive data, payment pressure, suspicious link, too-good-to-be-true offer, impersonation of an authority.
@@ -119,7 +119,7 @@ cd ScamLens
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env      # then paste your Groq key into .env
+copy .env.example .env
 streamlit run app.py
 ```
 Check everything with:

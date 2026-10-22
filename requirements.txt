@@ -4,3 +4,5 @@ scikit-learn
 pytest
 python-dotenv
 groq
+fastapi
+uvicorn
